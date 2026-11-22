@@ -28,7 +28,9 @@ subset of those 96, not a complete selector. There are two kernel families:
 95 warp-K configurations and one cohort configuration (public ID 45).
 The [shipping configuration table](flashquant/affine/configs.py) names C++
 options; the [selector](flashquant/affine/selection.py) alone owns exact
-shape matches and fallbacks. The full R4 sweep catalog and its controls
+shape matches and fallbacks. Its `MEASURED` map lists the observed M values
+by (zero mode, N, K); an unlisted M uses `FALLBACKS`, even between two
+measurements with the same winner. The full R4 sweep catalog and its controls
 are preserved on [the experiment branch](https://github.com/DrXuQian/FlashQuant/tree/experiments/affine-sweep).
 The deliverables are
 `build/libflashquant.so`, `build/include/flashquant/affine/api.h` and the

@@ -27,7 +27,7 @@ def test_generated_affine_selector_dispatches_compiled_entries(tmp_path):
     root=Path(__file__).resolve().parents[1]
     # Compile the actual generator output, including its filtered diagnostic
     # build, rather than copying its selection logic into a Python oracle.
-    for label,compiled in (("full",PRODUCTION_CONFIGS),("fallback",(621,))):
+    for label,compiled in (("full",PRODUCTION_CONFIGS),("fallback",(621,)),("subset",(45,616,621,1051))):
         rows=[row for row in EXACT if row[-1] in compiled]
         cases="\n".join(
             f"p.zero_mode={z}; p.m={m}; p.n={n}; p.k={k}; "
@@ -36,6 +36,14 @@ def test_generated_affine_selector_dispatches_compiled_entries(tmp_path):
             f"p.zero_mode={z}; p.m={maximum}; p.n=256; p.k=256; "
             f"assert(default_config(p)=={c});"
             for z,maximum,c in FALLBACKS if c in compiled)
+        # Missing measurements between equal winners are still fallback, and a
+        # measured configuration omitted from a partial build is not selectable.
+        flat={(z,m,n,k):c for z,m,n,k,c in rows}
+        probes=[(z,m+d,n,k) for z,m,n,k,_ in EXACT for d in (-1,0,1) if m+d>0]
+        probes += [(1,192,8192,8192),(0,8,3072,1024),(1,512,8192,4096)]
+        for z,m,n,k in sorted(set(probes)):
+            want=flat.get((z,m,n,k),next((c for zz,mm,c in FALLBACKS if zz==z and m<=mm and c in compiled),-1))
+            fallback_checks+=f"\np.zero_mode={z}; p.m={m}; p.n={n}; p.k={k}; assert(default_config(p)=={want});"
         source=tmp_path/f"selector-{label}.cpp"
         source.write_text(
             '#include <cassert>\n#include "flashquant/affine/api.h"\n' +
