@@ -6,6 +6,9 @@ wrapper around Humming. GGUF block types, file loading and GGUF model routing
 belong to [FlashGGUF](https://github.com/DrXuQian/FlashGGUF/tree/develop).
 Neither project needs the other's checkout or shared library to build.
 
+[SIMT GEMV](flashquant/simt_gemv/) is separate from the affine Tensor Core
+implementation. All current shipping configurations, including M=1, use TC.
+
 ## Build and test
 
 On a PPU1.0 box with a configured PPU SDK and a C++17 host compiler:
