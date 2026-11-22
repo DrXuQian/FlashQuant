@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flashquant"
+version = "0.1.0"
+description = "Python bindings for FlashQuant's native PPU affine INT4 kernels"
+readme = "README.md"
+requires-python = ">=3.9"
+
+[project.optional-dependencies]
+test = ["pytest", "numpy"]
+
+[tool.setuptools]
+packages = ["flashquant", "flashquant.affine"]
+include-package-data = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests/test_affine_contract.py", "tests/test_pack.py"]

@@ -1,0 +1,7 @@
+FlashQuant includes native affine W4A16 code and PPU C++ headers extracted
+from DrXuQian/FlashGGUF (formerly QUactlize), revision
+537d7351535ea7c5df58605db6658c4b78e0e520. The upstream project license is
+provided in LICENSE. Individual source files retain their own copyright,
+SPDX identifiers, and license notices, including BSD-3-Clause notices.
+The actlize dependency is a separate pinned Git submodule with its own
+license and notices.
