@@ -1,5 +1,18 @@
 # FlashQuant
 
+**Research branch.** The deployed build and the 96 shipping configurations
+remain identical to `main`. This branch additionally keeps the 1,351-entry
+R4 candidate catalog, the scheduled/classic controls and the original
+performance receipts. To rebuild specific research configurations:
+
+```sh
+python3 -m pytest -q tests/test_sweep_catalog.py
+python3 tools/build_affine_sweep.py --configs 24,45,1325 --sdk "${PPU_SDK:-/usr/local/PPU_SDK}" --output trial --jobs 4
+```
+
+This produces `trial/libflashquant-sweep.so` and its receipt. A successful
+compile does not mean a candidate was timed or admitted to production.
+
 Native PPU weight-only GEMM for ordinary affine INT4 (W4A16, group size 32).
 This is the implementation compared against Humming on ZW810E, **not** a
 wrapper around Humming. GGUF block types, file loading and GGUF model routing

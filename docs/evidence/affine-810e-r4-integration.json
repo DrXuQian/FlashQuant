@@ -1,0 +1,64 @@
+{
+  "schema": "quactlize.affine.gitlab-r4-port-verification.v1",
+  "date": "2026-11-17",
+  "gitlab_develop_base": "d8f4b6fd29b238fd17f4a58895fede8377b19568",
+  "original_checkpoint_commit": "787220677c7afbb0a150e817ed0d2e6dd000f586",
+  "arch": "ppu_10",
+  "actlize_revision": "46a058573cb4e20c0d851808ad82871397815c89",
+  "actlize_tree": "6a73d60ca9a1a6facb898d957b30dbdafa3d781f",
+  "cutlass_revision": "f94ec46f4f63f96003d6cfdf2014731e7672c281",
+  "upstream_dependency_gitlinks_changed": false,
+  "upstream_measured_policies_changed": false,
+  "upstream_measured_kernel_source_closures_verified": [
+    "zw810e_flashnext_dense_v1",
+    "zw810e_gate_up_f16_v1",
+    "zw810e_grouped_gu_v1"
+  ],
+  "host_ci": {
+    "status": "PASS",
+    "tests": 1372,
+    "passed": 1372,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 519.4483998490032,
+    "workspace_run": "results/affine-gitlab-r4-host",
+    "summary_sha256": "3b4ffa5416c8440534f201ea8e5c19e247d2712c4cabb1b2874b21772bdf9e84"
+  },
+  "focused_host_checks": {
+    "status": "PASS",
+    "passed": 43,
+    "files": ["tests/test_affine_contract.py", "tests/test_ppu_library_package.py"]
+  },
+  "native_cpu_abi_checks": {
+    "status": "PASS",
+    "passed": 3,
+    "scope": "Compiled specialization/default-selection/workspace guards; no GPU launch or product accuracy",
+    "selector": "tests/ppu/test_public_library.py -k affine_native"
+  },
+  "native_build": {
+    "status": "PASS",
+    "configuration_count": 96,
+    "translation_units": 99,
+    "compiler_errors": 0,
+    "source_identity_verified": true,
+    "selection_policy": "ZW810E_AFFINE_INT4_G32_V5",
+    "workspace_run": "tuning/affine-gitlab-r4-native-r1",
+    "library_sha256": "b666c60adc4b5ab5047ea289975ca607a9569a62ac7dd3e144bbe48b73ad8698",
+    "manifest_sha256": "2b1c460546c7f6cea5c105e56f23b65744a0f3bdc82b6a5fe6b9969221a29a01",
+    "source_snapshot_sha256": "eeeaa51ccc1161cdc1b70250011f3a7f701a77dc591402b275ee383133967b7a",
+    "log_sha256": "aa41c22d41037b807f74cf911980403a01f943ff4f3134a281a038310206bb21",
+    "scope": "Diagnostic module native compilation and CPU ABI; not a new combined public wheel"
+  },
+  "retained_initial_build_failure": {
+    "workspace_run": "tuning/affine-gitlab-r4-native",
+    "status": "FAIL",
+    "reason": "Classic mapping-ID reference remained in the new collective after moving its declaration out of the measured legacy header",
+    "resolution": "Keep the diagnostic mapping ID in affine-owned code; successful fresh rebuild uses a separate result directory"
+  },
+  "original_public_r4_evidence": "affine-810e-r4-results.json",
+  "combined_public_wheel_device_accuracy": "NOT_RUN",
+  "combined_public_wheel_performance": "NOT_RUN",
+  "gguf_scale_first_performance_admitted": false,
+  "all_shape_10pct_performance_admitted": false
+}
