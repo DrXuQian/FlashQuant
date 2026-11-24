@@ -41,6 +41,13 @@ that path to `flashquant.affine.Library(path)`.
 
 ## Calling contract
 
+For a bounded experiment, `--configs 535,625 --relax-m1` also builds
+explicit IDs 10535 and 10625. They retain the original N/K, warp-K and
+zero-point policy, but use runtime M, predicated stores and a real M-grid.
+Neither the original M=1 binaries nor the automatic selector are replaced.
+Pruned rows, compact output, Stream-K and cross-CTA slices are not relaxed.
+Run `python3 -m pytest -q tests/ppu/test_affine.py -k dynamic_m_twins` on this build.
+
 | Buffer | Type and logical shape |
 | --- | --- |
 | Host weight codes | `uint8[N,K]`, each in 0…15; `pack_host_v1` produces exactly `N*K/2` bytes |

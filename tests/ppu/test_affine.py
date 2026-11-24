@@ -5,7 +5,7 @@ import json
 import numpy as np
 import pytest
 
-from flashquant.affine.configs import CONFIGS
+from flashquant.affine.configs import config_by_id
 from .support import Arena, Replay
 
 
@@ -15,7 +15,7 @@ def test_affine_native_specializations(affine_library):
     checked=0
     for config in library.configurations():
         index=config["id"]
-        spec = CONFIGS[index]
+        spec = config_by_id(index)
         sn, sk = spec.value("StaticN"), spec.value("StaticK")
         if spec.family != "CooperativeKernel":
             continue
@@ -70,6 +70,21 @@ def test_affine_native_default_selection(affine_library):
 @pytest.mark.parametrize("shape",((7,512,256),(24,512,512),(128,512,256),
                                  (12,2048,3072),(512,2048,3072),(16,3072,1024)))
 def test_affine_public_output_and_changed_graph(affine_library,sdk,mode,shape,record_property):
+    check_output_replays(affine_library,sdk,mode,shape,record_property,-1)
+
+
+@pytest.mark.parametrize("m",(1,2,3,4,5,6,7,8,9,16,17))
+def test_dynamic_m_twins(affine_library,sdk,m,record_property):
+    twins=[x for x in affine_library.configurations() if x["id"]>=10000]
+    if not twins:
+        pytest.skip("optional --relax-m1 build")
+    for x in twins:
+        cfg=config_by_id(x["id"])
+        check_output_replays(affine_library,sdk,x["zero_mode"],
+            (m,cfg.value("StaticN"),cfg.value("StaticK")),record_property,x["id"])
+
+
+def check_output_replays(affine_library,sdk,mode,shape,record_property,index):
     from flashquant.affine import Buffers as AffineBuffers, Info as AffineInfo, problem
     library=affine_library
     m,n,k=shape
@@ -82,11 +97,11 @@ def test_affine_public_output_and_changed_graph(affine_library,sdk,mode,shape,re
             scales.T[...,None].astype(np.float32)).astype(np.float16).reshape(n,k).astype(np.float32)
     packed=np.empty(n*k//2,dtype=np.uint8)
     library.check(library.pack_host(codes.ctypes.data,n,k,packed.ctypes.data,packed.nbytes))
-    p=problem(m,n,k,zero_mode=mode)
-    selected=library.selected_config(p)
+    p=problem(m,n,k,zero_mode=mode,config=index)
+    selected=index if index!=-1 else library.selected_config(p)["id"]
     info=AffineInfo()
     library.check(library.query(C.byref(p),C.byref(info)))
-    record_property("affine_selected_config",str(selected["id"]))
+    record_property("affine_selected_config",str(selected))
     record_property("affine_checked_cells_per_replay",str(m*n))
     with Arena(sdk) as arena:
         weights=arena.upload(packed)
@@ -141,7 +156,7 @@ def test_affine_native_workspace_guards(affine_library,record_property):
     checked,fused=[],[]
     for config in library.configurations():
         index=config["id"]
-        spec = CONFIGS[index]
+        spec = config_by_id(index)
         splits = spec.value("GlobalSlices")
         workers=spec.value("StreamKWorkers")
         n, k = spec.value("StaticN"), spec.value("StaticK")

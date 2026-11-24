@@ -11,7 +11,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from flashquant.affine.configs import CONFIGS
+from flashquant.affine.configs import CONFIGS, dynamic_m_twin
 from flashquant.affine.selection import PRODUCTION_CONFIGS, describe, render
 
 
@@ -53,10 +53,10 @@ def actlize_revision(root):
     return actual
 
 
-def generate(work, ids):
+def generate(work, ids, configs=CONFIGS):
     sources, declarations, entries = [], [], []
     for index in ids:
-        cfg = CONFIGS[index]
+        cfg = configs[index]
         symbol = f"w4a16_{index}"
         query = f"qwa_info_v1 {symbol}_query(qwa_problem_v1 const& p)"
         prepare = f"quactlize::affine::Plan* {symbol}_prepare(qwa_problem_v1 const& p, qwa_buffers_v1 const& b)"
@@ -78,8 +78,18 @@ def generate(work, ids):
     return [*sources, registry, ROOT / "flashquant/affine/runtime.cpp", ROOT / "flashquant/affine/pack.cu"]
 
 
-def build(sdk, output, ids, jobs):
-    if not ids or len(set(ids)) != len(ids) or not set(ids) <= CONFIGS.keys():
+def build(sdk, output, ids, jobs, *, relax_m1=False):
+    configs = dict(CONFIGS)
+    if relax_m1:
+        # Only explicit IDs reach these twins. No fabricated measurement or
+        # change to the established default selector, even in an opt-in build.
+        twins = {10000+i: dynamic_m_twin(CONFIGS[i]) for i in ids
+                 if i in CONFIGS and CONFIGS[i].value("StaticM")==1}
+        if not twins:
+            raise ValueError("--relax-m1 requires an M1 config")
+        configs.update(twins)
+        ids = [*ids,*twins]
+    if not ids or len(set(ids)) != len(ids) or not set(ids) <= configs.keys():
         raise ValueError("--configs must name distinct shipping configuration IDs")
     if jobs < 1:
         raise ValueError("--jobs must be positive")
@@ -96,7 +106,7 @@ def build(sdk, output, ids, jobs):
     flags = [str(compiler), *FLAGS, *("-I" + str(p) for p in includes), "-DQUACTLIZE_W4A16_CLASSIC_WEIGHTS=0"]
     env = dict(os.environ, PATH=str(sdk / "bin") + os.pathsep + os.environ.get("PATH", ""),
                LD_LIBRARY_PATH=str(sdk / "lib") + os.pathsep + os.environ.get("LD_LIBRARY_PATH", ""))
-    sources = generate(work, ids)
+    sources = generate(work, ids, configs)
     objects = [work / (src.stem + ".o") for src in sources]
     commands = [[*flags, "-c", str(src), "-o", str(obj)] for src, obj in zip(sources, objects)]
     library = output / "libflashquant.so"
@@ -139,10 +149,12 @@ def main():
     parser.add_argument("--sdk", type=Path, default=Path(os.environ.get("PPU_SDK", "/usr/local/PPU_SDK")))
     parser.add_argument("--output", type=Path, default=ROOT / "build", help="new output directory")
     parser.add_argument("--configs", help="optional comma-separated subset of shipping IDs")
+    parser.add_argument("--relax-m1", action="store_true",
+                        help="also build dynamic-M twins (explicit ID=10000+original); keep default selection")
     parser.add_argument("--jobs", type=int, default=4)
     args = parser.parse_args()
     ids = PRODUCTION_CONFIGS if args.configs is None else [int(i) for i in args.configs.split(",")]
-    build(args.sdk, args.output, ids, args.jobs)
+    build(args.sdk, args.output, ids, args.jobs, relax_m1=args.relax_m1)
 
 
 if __name__ == "__main__":

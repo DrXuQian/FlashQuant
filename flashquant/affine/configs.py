@@ -56,6 +56,19 @@ def cohort(tile, count):
     return KernelConfig(tile, "CohortKernel", count, {})
 
 
+def dynamic_m_twin(spec):
+    """Keep the measured M1 binary. Build a distinct, unmeasured any-M twin."""
+    if (spec.family != "CooperativeKernel" or spec.value("StaticM") != 1
+            or spec.value("PruneRows") or spec.value("CompactOutput")
+            or spec.value("GlobalSlices") != 1 or spec.value("StreamKWorkers")):
+        raise ValueError("not a whole-K, non-pruned M1 specialization")
+    return warp_k(spec.tile, spec.width, **{**spec.overrides, "StaticM": 0})
+
+
+def config_by_id(index):
+    return CONFIGS[index] if index in CONFIGS else dynamic_m_twin(CONFIGS[index-10000])
+
+
 CONFIGS = {
     45: cohort((16, 64, 128, 16, 32, 2), 4),
     74: warp_k((64, 64, 256, 64, 32, 2), 64,

@@ -29,8 +29,20 @@ struct KPackIntegerZeroStoragePPU<true,Stages,Vectors> {
   alignas(128) marlin_ppu_detail::Vector128 zeros[Stages][Vectors];
 };
 
+// Code delivery, MMA and K-peer reduction are independent of the affine
+// convention. IntegerZero (below) subtracts an integer *before* scaling;
+// a floating offset is added *after* a rounded multiply and is never a zero code.
+enum class Group32Operand { PostScaleOffset, PreScaleCenter }; // both use canonical K-pack4
+template<auto Operand> constexpr bool classic_weight_layout() {
+  if constexpr (std::is_same_v<decltype(Operand),bool>) return Operand;
+  else {
+    static_assert(std::is_same_v<decltype(Operand),Group32Operand>);
+    return false;
+  }
+}
+
 template<int TM, int TN, int TK, int WN, int WK, int Stages,
-         bool NativeA = false, bool ClassicWeights = false, bool NativeB = false,
+         bool NativeA = false, auto Operand = false, bool NativeB = false,
          bool ChunkA = false, bool StageCycles = false, int MmaM8 = 0,
          bool RegisterPrefetch = false, bool PairedScales = false,
          bool FullRegisterPipeline = false, int MmaRows = 16,
@@ -45,6 +57,8 @@ template<int TM, int TN, int TK, int WN, int WK, int Stages,
          bool PermuteZeroBias = false, bool PreparedZeroBias = false,
          bool ByteZeroWords = false>
 struct NativeInt4WarpKCollectivePPU {
+  // Legacy bool arguments retain their original template mangling and layout.
+  static constexpr bool ClassicWeights=classic_weight_layout<Operand>();
   using TileShape = cute::Shape<cute::Int<TM>, cute::Int<TN>, cute::Int<TK>>;
   using ElementA = cutlass::half_t;
   using ElementB = cutlass::int4b_t;
@@ -82,6 +96,9 @@ struct NativeInt4WarpKCollectivePPU {
       : ClassicWeights ? TK*BStorageN/32 : (TK/4)*BStride/8;
   static constexpr int MetadataColumnsPerVector = PreparedZeroBias ? 4 : 8;
   static constexpr int SVectors = (TK / 32) * TN / MetadataColumnsPerVector;
+  static constexpr bool SeparateOffset = std::is_same_v<decltype(Operand),Group32Operand>;
+  static_assert(!SeparateOffset || (!IntegerZero && !PairedScales && !ClassicWeights),
+                "prepared offsets and scales are separate group-major K-pack4 planes");
   static constexpr int BThreads=32*WarpN*WarpK;
   static constexpr int ExpandedBVectors=(WK/16)*NAtoms*BThreads;
   static constexpr uint64_t MappingId = ClassicWeights
@@ -149,10 +166,12 @@ struct NativeInt4WarpKCollectivePPU {
     half_t const* scales;
   };
   struct IntegerZeroParams : BaseParams { uint8_t const* zeros; };
-  using Params=std::conditional_t<IntegerZero,IntegerZeroParams,BaseParams>;
+  struct FloatOffsetParams : BaseParams { half_t const* offsets; };
+  using Params=std::conditional_t<SeparateOffset,FloatOffsetParams,
+               std::conditional_t<IntegerZero,IntegerZeroParams,BaseParams>>;
   CUTLASS_HOST_DEVICE static Params make_params(
       int m,int n,int k,half_t const* a,uint16_t const* b,half_t const* scales) {
-    if constexpr (IntegerZero) return {{m,n,k,a,b,scales},nullptr};
+    if constexpr (IntegerZero || SeparateOffset) return {{m,n,k,a,b,scales},nullptr};
     else return {m,n,k,a,b,scales};
   }
   struct Accumulator { FragmentC tile[MAtoms][NAtoms]; };
@@ -172,8 +191,8 @@ struct NativeInt4WarpKCollectivePPU {
   static_assert(sizeof(BPair)==sizeof(Vector));
   static_assert(ExpandedBVectors*sizeof(Vector)==TK*TN*sizeof(half_t));
   struct SharedStorage : KPackExpandedBStoragePPU<SharedB,ExpandedBVectors>,
-                         KPackIntegerZeroStoragePPU<IntegerZero && !PreparedZeroBias,Stages,
-                                                    (TK/32)*TN/ZeroColumnsPerVector> {
+                         KPackIntegerZeroStoragePPU<SeparateOffset || (IntegerZero && !PreparedZeroBias),Stages,
+                                                    SeparateOffset ? SVectors : (TK/32)*TN/ZeroColumnsPerVector> {
     alignas(128) Vector a[Stages][AVectors];
     alignas(128) Vector b[Stages][BVectors];
     alignas(128) Vector scales[Stages][SVectors];
@@ -322,6 +341,11 @@ struct NativeInt4WarpKCollectivePPU {
             &shared.scales[stage][i],
             &scales[(tile * (TK / 32) + group) * (p.n / MetadataColumnsPerVector) +
                     n_base / MetadataColumnsPerVector + chunk]);
+        if constexpr (SeparateOffset) {
+          auto const src=(tile*(TK/32)+group)*(p.n/8)+n_base/8+chunk;
+          marlin_ppu_detail::cp_async_16(&shared.zeros[stage][i],
+                                        reinterpret_cast<Vector const*>(p.offsets)+src);
+        }
       }
       if constexpr (IntegerZero && !PreparedZeroBias) {
         constexpr int CopyZVectors=(CopyK/32)*TN/ZeroColumnsPerVector;
@@ -563,10 +587,26 @@ struct NativeInt4WarpKCollectivePPU {
         cached.s1=__half2half2(scales[group*TN+column+8]);
       }
     }
-    result.b0.value[0]=__hmul2(result.b0.value[0],cached.s0);
-    result.b0.value[1]=__hmul2(result.b0.value[1],cached.s0);
-    result.b1.value[0]=__hmul2(result.b1.value[0],cached.s1);
-    result.b1.value[1]=__hmul2(result.b1.value[1],cached.s1);
+    if constexpr (SeparateOffset) {
+      auto const* z=reinterpret_cast<__half const*>(shared.zeros[stage])+group*TN+column;
+      auto const z0=__half2half2(z[0]), z1=__half2half2(z[8]);
+      #pragma unroll
+      for (int i=0;i<2;++i) {
+        if constexpr (Operand == Group32Operand::PreScaleCenter) {
+          // z is exactly representable (8 - the original uint4 zero).
+          result.b0.value[i]=__hmul2_rn(__hadd2_rn(result.b0.value[i],z0),cached.s0);
+          result.b1.value[i]=__hmul2_rn(__hadd2_rn(result.b1.value[i],z1),cached.s1);
+        } else {
+          result.b0.value[i]=__hadd2_rn(__hmul2_rn(result.b0.value[i],cached.s0),z0);
+          result.b1.value[i]=__hadd2_rn(__hmul2_rn(result.b1.value[i],cached.s1),z1);
+        }
+      }
+    } else {
+      result.b0.value[0]=__hmul2(result.b0.value[0],cached.s0);
+      result.b0.value[1]=__hmul2(result.b0.value[1],cached.s0);
+      result.b1.value[0]=__hmul2(result.b1.value[0],cached.s1);
+      result.b1.value[1]=__hmul2(result.b1.value[1],cached.s1);
+    }
     return result;
   }
 

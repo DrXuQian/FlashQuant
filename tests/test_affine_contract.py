@@ -8,6 +8,22 @@ from flashquant.affine.native import Buffers, Config, Info, Problem, problem
 from flashquant.affine.configs import CONFIGS
 
 
+def test_dynamic_m_twins_preserve_geometry_not_pruned_row_counts():
+    from dataclasses import replace
+    from flashquant.affine.configs import dynamic_m_twin, config_by_id
+    from flashquant.affine.selection import PRODUCTION_CONFIGS
+    parents=[i for i,c in CONFIGS.items() if c.value("StaticM")==1]
+    assert len(parents)==7
+    for i in parents:
+        c=CONFIGS[i]
+        clone=config_by_id(10000+i)
+        assert clone.tile==c.tile and clone.width==c.width and clone.value("StaticM")==0
+        assert clone.overrides=={**c.overrides,"StaticM":0} and 10000+i not in PRODUCTION_CONFIGS
+        for option,value in (("PruneRows",1),("CompactOutput",1),("GlobalSlices",2),("StreamKWorkers",40)):
+            with pytest.raises(ValueError):
+                dynamic_m_twin(replace(c,overrides={**c.overrides,option:value}))
+
+
 def test_affine_abi_sizes():
     assert C.sizeof(Problem) == 36
     assert C.sizeof(Buffers) == 72
